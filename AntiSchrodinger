@@ -1,0 +1,209 @@
+using System;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Security.Principal;
+using System.Management;
+using System.Net.NetworkInformation;
+
+class Program
+{
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool IsDebuggerPresent();
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool CheckRemoteDebuggerPresent(IntPtr hProcess, ref bool isDebuggerPresent);
+
+    [DllImport("kernel32.dll")]
+    static extern IntPtr GetModuleHandle(string lpModuleName);
+
+    [DllImport("user32.dll")]
+    static extern int GetSystemMetrics(int nIndex);
+
+    static void Main(string[] args)
+    {
+        // Check for debugger
+        if (IsDebuggerPresent())
+        {
+            Console.WriteLine("No Luck Today");
+            Environment.Exit(0);
+        }
+
+        // Check for remote debugger
+        bool isRemoteDebuggerPresent = false;
+        if (CheckRemoteDebuggerPresent(Process.GetCurrentProcess().Handle, ref isRemoteDebuggerPresent) && isRemoteDebuggerPresent)
+        {
+            Console.WriteLine("No Luck Today");
+            Environment.Exit(0);
+        }
+
+        // Check for common analysis tools and sandbox-related processes
+        string[] suspiciousProcesses = {
+            "ida", "x32dbg", "x64dbg", "ollydbg", "wireshark", 
+            "fiddler", "processhacker", "processhacker2", "process hacker",
+            "dnspy", "immunity debugger", "pestudio", "procmon", "procexp",
+            "sandboxie", "pythonw", "python", "vboxservice", "vmtoolsd",
+            "vmwaretray", "vmwareuser", "vgauthservice", "vmacthlp",
+            "vmsrvc", "qemu-ga", "joeboxcontrol", "joeboxserver",
+            "vpcmap", "vmsrvc", "vmusrvc", "prl_tools", "prl_cc",
+            "xenservice", "vmwareservice", "vmwaretray", "vmtoolsd",
+            "df5serv", "vboxservice", "virtualbox", "wireshark",
+            "fiddler", "charles", "burp", "proxifier"
+        };
+
+        Process[] runningProcesses = Process.GetProcesses();
+        foreach (Process proc in runningProcesses)
+        {
+            try
+            {
+                if (Array.Exists(suspiciousProcesses, x => proc.ProcessName.ToLower().Contains(x)))
+                {
+                    Console.WriteLine("No Luck Today");
+                    Environment.Exit(0);
+                }
+            }
+            catch { }
+        }
+
+        // Check execution time (anti-VM check)
+        DateTime startTime = DateTime.Now;
+        System.Threading.Thread.Sleep(500);
+        TimeSpan elapsedTime = DateTime.Now - startTime;
+        if (elapsedTime.TotalMilliseconds < 500)
+        {
+            Console.WriteLine("No Luck Today");
+            Environment.Exit(0);
+        }
+
+        // Check system memory (sandboxes often have low memory)
+        try
+        {
+            ManagementObjectSearcher searcher = new ManagementObjectSearcher("SELECT TotalPhysicalMemory FROM Win32_ComputerSystem");
+            foreach (ManagementObject obj in searcher.Get())
+            {
+                ulong memory = Convert.ToUInt64(obj["TotalPhysicalMemory"]);
+                if (memory < 2L * 1024L * 1024L * 1024L) // Less than 2GB
+                {
+                    Console.WriteLine("No Luck Today");
+                    Environment.Exit(0);
+                }
+            }
+        }
+        catch { }
+
+        // Check number of processors (sandboxes often have few cores)
+        if (Environment.ProcessorCount < 2)
+        {
+            Console.WriteLine("No Luck Today");
+            Environment.Exit(0);
+        }
+
+        // Check for common sandbox and VM MAC addresses
+        try
+        {
+            string[] suspiciousMacs = {
+                "00:05:69", // VMware
+                "00:0C:29", // VMware
+                "00:1C:14", // VMware
+                "00:50:56", // VMware
+                "08:00:27", // VirtualBox
+                "00:16:3E", // Xen
+                "00:1C:42", // Parallels
+                "00:03:FF", // Microsoft Virtual PC
+                "00:0F:4B", // Virtual Iron
+                "00:1C:42"  // Parallels
+            };
+
+            foreach (NetworkInterface nic in NetworkInterface.GetAllNetworkInterfaces())
+            {
+                string macAddress = nic.GetPhysicalAddress().ToString();
+                foreach (string suspiciousMac in suspiciousMacs)
+                {
+                    if (macAddress.StartsWith(suspiciousMac.Replace(":", "")))
+                    {
+                        Console.WriteLine("No Luck Today");
+                        Environment.Exit(0);
+                    }
+                }
+            }
+        }
+        catch { }
+
+        // Check for sandbox-related DLLs
+        string[] suspiciousDlls = {
+            "sbiedll.dll",      // Sandboxie
+            "dbghelp.dll",      // Various debuggers
+            "api_log.dll",      // API monitoring
+            "dir_watch.dll",    // API monitoring
+            "pstorec.dll",      // API monitoring
+            "vmcheck.dll",      // Virtual Machine detection
+            "wpespy.dll",       // WPE Pro
+            "cmdvrt32.dll",     // Comodo Container
+            "cmdvrt64.dll",     // Comodo Container
+            "cucm.dll"          // Cuckoo Sandbox
+        };
+
+        foreach (string dll in suspiciousDlls)
+        {
+            if (GetModuleHandle(dll) != IntPtr.Zero)
+            {
+                Console.WriteLine("No Luck Today");
+                Environment.Exit(0);
+            }
+        }
+
+        // Check if running with admin privileges (common in analysis environments)
+        bool isElevated;
+        using (WindowsIdentity identity = WindowsIdentity.GetCurrent())
+        {
+            WindowsPrincipal principal = new WindowsPrincipal(identity);
+            isElevated = principal.IsInRole(WindowsBuiltInRole.Administrator);
+        }
+        if (isElevated)
+        {
+            Console.WriteLine("No Luck Today");
+            Environment.Exit(0);
+        }
+
+        // Check screen resolution (sandboxes often use low resolutions)
+        if (GetSystemMetrics(0) < 1024 || GetSystemMetrics(1) < 768)  // Check width and height
+        {
+            Console.WriteLine("No Luck Today");
+            Environment.Exit(0);
+        }
+
+        // Check for common sandbox usernames
+        string[] suspiciousUsernames = { "sandbox", "virus", "malware", "test", "sample", "admin", "analysis" };
+        string currentUsername = Environment.UserName.ToLower();
+        if (Array.Exists(suspiciousUsernames, x => currentUsername.Contains(x)))
+        {
+            Console.WriteLine("No Luck Today");
+            Environment.Exit(0);
+        }
+
+        // Check for common sandbox computer names
+        string[] suspiciousComputerNames = { "sandbox", "virus", "malware", "test", "sample", "admin", "analysis" };
+        string computerName = Environment.MachineName.ToLower();
+        if (Array.Exists(suspiciousComputerNames, x => computerName.Contains(x)))
+        {
+            Console.WriteLine("No Luck Today");
+            Environment.Exit(0);
+        }
+
+        // Check disk size (sandboxes often have small disks)
+        try
+        {
+            ManagementObject disk = new ManagementObject("win32_logicaldisk.deviceid=\"C:\"");
+            disk.Get();
+            ulong diskSize = Convert.ToUInt64(disk["Size"]);
+            if (diskSize < 50L * 1024L * 1024L * 1024L) // Less than 50GB
+            {
+                Console.WriteLine("No Luck Today");
+                Environment.Exit(0);
+            }
+        }
+        catch { }
+
+        // If all checks pass
+        Console.WriteLine("Good Luck Today");
+    }
+}
