@@ -39,7 +39,7 @@ class AntiDebug
         }
         catch { }
 
-        // Method 4: Timing check
+        // Method 4: Timing check 
         long timestamp = Stopwatch.GetTimestamp();
         Thread.Sleep(1);
         long elapsed = Stopwatch.GetTimestamp() - timestamp;
