@@ -1,0 +1,133 @@
+using System;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Threading;
+
+class AntiDebug
+{
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool IsDebuggerPresent();
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool CheckRemoteDebuggerPresent(IntPtr hProcess, ref bool isDebuggerPresent);
+
+    [DllImport("ntdll.dll")]
+    static extern int NtQueryInformationProcess(IntPtr processHandle, int processInformationClass, ref int processInformation, int processInformationLength, ref int returnLength);
+
+    public static bool IsBeingDebugged()
+    {
+        // Method 1: Basic debugger check
+        if (IsDebuggerPresent())
+            return true;
+
+        // Method 2: Remote debugger check
+        bool isRemoteDebuggerPresent = false;
+        if (CheckRemoteDebuggerPresent(Process.GetCurrentProcess().Handle, ref isRemoteDebuggerPresent))
+        {
+            if (isRemoteDebuggerPresent)
+                return true;
+        }
+
+        // Method 3: Check Debug flag in PEB
+        try
+        {
+            int isDebugged = 0;
+            int returnLength = 0;
+            int status = NtQueryInformationProcess(Process.GetCurrentProcess().Handle, 0x7, ref isDebugged, sizeof(int), ref returnLength);
+            if (isDebugged != 0)
+                return true;
+        }
+        catch { }
+
+        // Method 4: Timing check
+        long timestamp = Stopwatch.GetTimestamp();
+        Thread.Sleep(1);
+        long elapsed = Stopwatch.GetTimestamp() - timestamp;
+        if (elapsed < Stopwatch.Frequency / 1000)  // Less than expected time passed
+            return true;
+
+        // Method 5: Check for debugger window
+        if (Process.GetCurrentProcess().MainWindowTitle.Contains("Debug"))
+            return true;
+
+        // Method 6: Check parent process
+        try
+        {
+            Process currentProcess = Process.GetCurrentProcess();
+            Process parentProcess = ProcessExtensions.Parent(currentProcess);
+            if (parentProcess != null)
+            {
+                string parentName = parentProcess.ProcessName.ToLower();
+                if (parentName.Contains("ida") || parentName.Contains("debugger") || 
+                    parentName.Contains("x32dbg") || parentName.Contains("x64dbg") ||
+                    parentName.Contains("ollydbg") || parentName.Contains("dnspy"))
+                    return true;
+            }
+        }
+        catch { }
+
+        // Method 7: Check Debugger.IsAttached
+        if (Debugger.IsAttached)
+            return true;
+
+        // Method 8: Exception handling behavior differs when debugged
+        try
+        {
+            throw new Exception();
+        }
+        catch (Exception ex)
+        {
+            if (ex.StackTrace.ToLower().Contains("debugger"))
+                return true;
+        }
+
+        return false;
+    }
+}
+
+// Helper class for getting parent process
+internal static class ProcessExtensions
+{
+    private static string FindIndexedProcessName(int pid)
+    {
+        var processName = Process.GetProcessById(pid).ProcessName;
+        var processesByName = Process.GetProcessesByName(processName);
+        string processIndexdName = null;
+
+        for (var index = 0; index < processesByName.Length; index++)
+        {
+            processIndexdName = index == 0 ? processName : processName + "#" + index;
+            var processId = Process.GetProcessesByName(processIndexdName);
+            if (processId.Length == 0) return processIndexdName;
+        }
+        return processIndexdName;
+    }
+
+    private static int FindPidFromIndexedProcessName(string indexedProcessName)
+    {
+        var processes = Process.GetProcessesByName(indexedProcessName.Split('#')[0]);
+        if (processes.Length == 0) return -1;
+        return processes[0].Id;
+    }
+
+    public static Process Parent(Process process)
+    {
+        return Process.GetProcessById(ParentProcessId(process));
+    }
+
+    private static int ParentProcessId(Process process)
+    {
+        var parentPid = 0;
+        var processName = FindIndexedProcessName(process.Id);
+        using (var query = new System.Management.ManagementObjectSearcher(
+            "SELECT ParentProcessId FROM Win32_Process WHERE ProcessId=" + process.Id))
+        {
+            foreach (System.Management.ManagementObject mo in query.Get())
+            {
+                parentPid = Convert.ToInt32(mo["ParentProcessId"]);
+                break;
+            }
+        }
+        return parentPid;
+    }
+}
