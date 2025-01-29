@@ -1,2 +1,2 @@
 # Heisenbugger
-Changes behavior when observed
+Changes behavior once observed
