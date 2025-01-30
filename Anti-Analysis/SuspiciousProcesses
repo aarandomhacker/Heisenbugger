@@ -1,0 +1,92 @@
+using System;
+using System.Diagnostics;
+
+class DebugDetection 
+{
+    public static bool HasSuspiciousProcesses()
+    {
+        string[] suspiciousProcesses = {
+            // Debuggers - Obvious limitations searching process name only. Will expand on these basic detection mechanism in the next version
+            "ida", "ida64",
+            "x32dbg", "x64dbg",
+            "ollydbg",
+            "dnspy",
+            "windbg",
+            "immunity debugger",
+            "radare2",
+            "ghidra",
+            "cheatengine", "cheat engine",
+            
+            // Reverse engineering tools
+            "pestudio",
+            "cutter",
+            "hopper",
+            "binary ninja",
+            "hxd",
+            "010 editor",
+            
+            // Process/System monitors
+            "processhacker",
+            "process hacker",
+            "processhacker2",
+            "procmon",
+            "procexp",
+            "processmonitor",
+            "processexplorer",
+            "regmon",
+            "filemon",
+            
+            // Network analysis
+            "wireshark",
+            "fiddler",
+            "burpsuite",
+            "charles",
+            "mitmproxy",
+            
+            // General analysis tools
+            "apimonitor",
+            "sysinternals",
+            "reshacker",
+            "resourcehacker",
+            "dotpeek",
+            "ilspy",
+            "reflector"
+        };
+
+        try 
+        {
+            Process[] runningProcesses = Process.GetProcesses();
+            foreach (Process proc in runningProcesses)
+            {
+                string processName = proc.ProcessName.ToLower();
+                
+                // Check if process name contains any suspicious strings
+                foreach (string suspicious in suspiciousProcesses)
+                {
+                    if (processName.Contains(suspicious))
+                    {
+                        return true;
+                    }
+                }
+                
+                // Also check main window title if available
+                try
+                {
+                    string windowTitle = proc.MainWindowTitle.ToLower();
+                    foreach (string suspicious in suspiciousProcesses)
+                    {
+                        if (windowTitle.Contains(suspicious))
+                        {
+                            return true;
+                        }
+                    }
+                }
+                catch { }
+            }
+        }
+        catch { }
+
+        return false;
+    }
+}
+
