@@ -6,7 +6,7 @@ class DebugDetection
     public static bool HasSuspiciousProcesses()
     {
         string[] suspiciousProcesses = {
-            // Debuggers
+            // Debuggers - Obvious limitations searching process name only. Will expand on these basic detection mechanism in the next version
             "ida", "ida64",
             "x32dbg", "x64dbg",
             "ollydbg",
