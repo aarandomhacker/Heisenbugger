@@ -1,0 +1,234 @@
+using System;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Security.Principal;
+using System.Management;
+using System.Net.NetworkInformation;
+
+class Program
+{
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool IsDebuggerPresent();
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool CheckRemoteDebuggerPresent(IntPtr hProcess, ref bool isDebuggerPresent);
+
+    [DllImport("kernel32.dll")]
+    static extern IntPtr GetModuleHandle(string lpModuleName);
+
+    [DllImport("user32.dll")]
+    static extern int GetSystemMetrics(int nIndex);
+
+    static void Main(string[] args)
+    {
+        // Basic debugger detection using IsDebuggerPresent()
+        // Limitations:
+        // - Only detects user-mode debuggers attached directly to the process
+        // - Can be bypassed by patching the PEB's BeingDebugged flag
+        // - Won't detect kernel-mode debuggers
+        // - Can be hooked and made to return false
+        // Potential improvements:
+        // - Add timing checks around the call to detect debugger-induced delays
+        // - Check PEB directly instead of using the API which can be hooked
+        // - Add kernel-mode debugger detection via NtQuerySystemInformation
+        // - Check for hardware breakpoints
+        // - Verify process memory permissions
+        if (IsDebuggerPresent())
+        {
+            Console.WriteLine("No Luck Today");
+            Environment.Exit(0);
+        }
+
+        // Check for remote debugger
+        // Limitations:
+        // - Can be bypassed by hooking the API
+        // - Only detects standard debugger attachment
+        // - Doesn't detect all types of remote debugging tools
+        // - Can be patched in memory
+        // Improvements:
+        // - Add additional debugger detection methods
+        // - Check debug flags in PEB
+        // - Monitor for debug events
+        // - Check for debug ports
+        // - Verify process handles
+        bool isRemoteDebuggerPresent = false;
+        if (CheckRemoteDebuggerPresent(Process.GetCurrentProcess().Handle, ref isRemoteDebuggerPresent) && isRemoteDebuggerPresent)
+        {
+            Console.WriteLine("No Luck Today");
+            Environment.Exit(0);
+        }
+
+        // Check for analysis tools and sandbox processes
+        // Limitations:
+        // - Process names can be changed
+        // - List needs constant updating
+        // - Process could be hidden
+        // - Tools can use random names
+        // - Doesn't detect custom tools
+        // Improvements:
+        // - Check process hashes
+        // - Monitor process behaviors
+        // - Check parent processes
+        // - Verify process signatures
+        // - Check loaded modules
+        // - Monitor process creation/deletion
+        // - Check process memory regions
+        string[] suspiciousProcesses = {
+            "ida", "x32dbg", "x64dbg", "ollydbg", "wireshark", 
+            "fiddler", "processhacker", "processhacker2", "process hacker",
+            "dnspy", "immunity debugger", "pestudio", "procmon", "procexp",
+            "sandboxie", "pythonw", "python", "vboxservice", "vmtoolsd",
+            "vmwaretray", "vmwareuser", "vgauthservice", "vmacthlp",
+            "vmsrvc", "qemu-ga", "joeboxcontrol", "joeboxserver",
+            "vpcmap", "vmsrvc", "vmusrvc", "prl_tools", "prl_cc",
+            "xenservice", "vmwareservice", "vmwaretray", "vmtoolsd",
+            "df5serv", "vboxservice", "virtualbox", "wireshark",
+            "fiddler", "charles", "burp", "proxifier"
+        };
+
+        foreach (Process proc in Process.GetProcesses())
+        {
+            try
+            {
+                if (Array.Exists(suspiciousProcesses, x => proc.ProcessName.ToLower().Contains(x)))
+                {
+                    Console.WriteLine("No Luck Today");
+                    Environment.Exit(0);
+                }
+            }
+            catch { }
+        }
+
+        // Check system resources for VM/sandbox detection
+        // Limitations:
+        // - Values can be spoofed
+        // - Thresholds may need adjustment
+        // - Hardware configurations vary
+        // - Some legitimate systems might fail checks
+        // Improvements:
+        // - Add CPU core speed checks
+        // - Check for VM-specific registry keys
+        // - Monitor resource usage patterns
+        // - Check disk performance
+        // - Verify hardware IDs
+        // - Check BIOS information
+        // - Monitor temperature sensors
+        try
+        {
+            // Check RAM
+            ManagementObjectSearcher searcher = new ManagementObjectSearcher("SELECT TotalPhysicalMemory FROM Win32_ComputerSystem");
+            foreach (ManagementObject obj in searcher.Get())
+            {
+                ulong memory = Convert.ToUInt64(obj["TotalPhysicalMemory"]);
+                if (memory < 4L * 1024L * 1024L * 1024L) // Less than 4GB
+                {
+                    Console.WriteLine("No Luck Today");
+                    Environment.Exit(0);
+                }
+            }
+
+            // Check disk size
+            ManagementObject disk = new ManagementObject("win32_logicaldisk.deviceid=\"C:\"");
+            disk.Get();
+            ulong diskSize = Convert.ToUInt64(disk["Size"]);
+            if (diskSize < 100L * 1024L * 1024L * 1024L) // Less than 100GB
+            {
+                Console.WriteLine("No Luck Today");
+                Environment.Exit(0);
+            }
+
+            // Check CPU cores
+            if (Environment.ProcessorCount < 4) // Modern systems typically have 4+ cores
+            {
+                Console.WriteLine("No Luck Today");
+                Environment.Exit(0);
+            }
+
+            // Check screen resolution
+            if (GetSystemMetrics(0) < 1920 || GetSystemMetrics(1) < 1080) // Less than 1080p
+            {
+                Console.WriteLine("No Luck Today");
+                Environment.Exit(0);
+            }
+        }
+        catch { }
+
+        // Check for VM network adapters
+        // Limitations:
+        // - MAC addresses can be spoofed
+        // - New VM vendors not in list
+        // - Some legitimate NICs might match
+        // - Doesn't detect all VM networks
+        // Improvements:
+        // - Check network adapter names
+        // - Monitor network behavior
+        // - Check network driver information
+        // - Verify network stack characteristics
+        // - Monitor network latency
+        // - Check for virtual switches
+        try
+        {
+            string[] suspiciousMacs = {
+                "00:05:69", // VMware
+                "00:0C:29", // VMware
+                "00:1C:14", // VMware
+                "00:50:56", // VMware
+                "08:00:27", // VirtualBox
+                "00:16:3E", // Xen
+                "00:1C:42", // Parallels
+                "00:03:FF", // Microsoft Virtual PC
+                "00:0F:4B", // Virtual Iron
+                "00:1C:42"  // Parallels
+            };
+
+            foreach (NetworkInterface nic in NetworkInterface.GetAllNetworkInterfaces())
+            {
+                string macAddress = nic.GetPhysicalAddress().ToString();
+                if (Array.Exists(suspiciousMacs, mac => macAddress.StartsWith(mac.Replace(":", ""))))
+                {
+                    Console.WriteLine("No Luck Today");
+                    Environment.Exit(0);
+                }
+            }
+        }
+        catch { }
+
+        // Check for sandbox/analysis environment characteristics
+        // Limitations:
+        // - Values can be changed
+        // - Simple string matching
+        // - False positives possible
+        // - Easy to bypass
+        // Improvements:
+        // - Add registry checks
+        // - Check installed programs
+        // - Monitor system behaviors
+        // - Check file system artifacts
+        // - Verify system uptime
+        // - Check user activity patterns
+        // - Monitor input devices
+        string[] suspiciousStrings = { 
+            "sandbox", "virus", "malware", "test", "sample", "analysis",
+            "cuckoo", "threat", "maltest", "vmware", "vbox", "virtual",
+            "analyze", "lab", "research", "reverse", "virus", "dynamic"
+        };
+        
+        // Check username
+        if (Array.Exists(suspiciousStrings, x => Environment.UserName.ToLower().Contains(x)))
+        {
+            Console.WriteLine("No Luck Today");
+            Environment.Exit(0);
+        }
+
+        // Check computer name
+        if (Array.Exists(suspiciousStrings, x => Environment.MachineName.ToLower().Contains(x)))
+        {
+            Console.WriteLine("No Luck Today");
+            Environment.Exit(0);
+        }
+
+        // All checks passed
+        Console.WriteLine("Good Luck Today");
+    }
+}
+
