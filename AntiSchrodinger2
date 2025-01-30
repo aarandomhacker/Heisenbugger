@@ -22,7 +22,7 @@ class Program
     static void Main(string[] args)
     {
         // Basic debugger detection using IsDebuggerPresent()
-        // Limitations:
+        // Limitations: 
         // - Only detects user-mode debuggers attached directly to the process
         // - Can be bypassed by patching the PEB's BeingDebugged flag
         // - Won't detect kernel-mode debuggers
